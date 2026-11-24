@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" id="themeColor" content="#f6f4ee">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Image → PDF">
+<title>Image → PDF</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --ink: #1b1b18;
+    --paper: #f6f4ee;
+    --line: #d8d3c5;
+    --accent: #2f5d4f;
+    --accent-light: #e4ede9;
+    --danger: #8a3b2a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+  }
+  header {
+    padding: 28px 20px 18px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .titles { min-width: 0; }
+  .mode-toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 0.82rem;
+    color: #555;
+    cursor: pointer;
+  }
+  .mode-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .mode-toggle .icon { font-size: 1rem; line-height: 1; }
+
+  /* ---------- App mode (PWA-style simulation) ---------- */
+  body.app-mode {
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body.app-mode header {
+    flex-shrink: 0;
+    align-items: center;
+    background: var(--accent);
+    color: #fff;
+    border-bottom: none;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px 12px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+    z-index: 10;
+  }
+  body.app-mode h1 { font-size: 1.1rem; margin: 0; }
+  body.app-mode p.sub,
+  body.app-mode footer { display: none; }
+  body.app-mode .mode-toggle {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.45);
+    color: #fff;
+  }
+  body.app-mode main {
+    flex: 1;
+    width: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+  body.app-mode .actions {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid var(--line);
+    justify-content: center;
+    flex-wrap: nowrap;
+    z-index: 10;
+  }
+  body.app-mode .actions button.primary { flex: 1; max-width: 420px; }
+  body.app-mode .dropzone { padding: 28px 16px; }
+  body.app-mode.standalone .mode-toggle { display: none; }
+
+  /* Launch splash: a dedicated tap target, since browsers only allow
+     full screen in direct response to a user gesture */
+  #splash {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: var(--accent);
+    color: #fff;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.25s ease;
+  }
+  #splash.show { display: flex; }
+  #splash.hide { opacity: 0; pointer-events: none; }
+  #splash .splash-icon {
+    width: 72px; height: 72px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.14);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem;
+  }
+  #splash h2 { margin: 0; font-size: 1.4rem; font-weight: 600; }
+  #splash p { margin: 0; font-size: 0.9rem; opacity: 0.8; }
+  h1 {
+    font-size: 1.4rem;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  p.sub {
+    margin: 0;
+    color: #666;
+    font-size: 0.92rem;
+  }
+  main {
+    padding: 20px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .dropzone {
+    border: 2px dashed var(--line);
+    border-radius: 10px;
+    padding: 36px 20px;
+    text-align: center;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .dropzone.drag {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+  .dropzone p {
+    margin: 0;
+    color: #555;
+    font-size: 0.95rem;
+  }
+  .dropzone strong {
+    color: var(--accent);
+  }
+  input[type=file] { display: none; }
+  #list {
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .item img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+    border: 1px solid var(--line);
+  }
+  .item .meta {
+    flex: 1;
+    min-width: 0;
+  }
+  .item .name {
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .item .size {
+    font-size: 0.75rem;
+    color: #888;
+  }
+  .item .order {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .order button {
+    border: none;
+    background: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px 6px;
+    line-height: 1;
+  }
+  .order button:hover { color: var(--accent); }
+  .order button:disabled { opacity: 0.25; cursor: default; }
+  .remove {
+    border: none;
+    background: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 4px 6px;
+    line-height: 1;
+  }
+  .compress-row {
+    margin-top: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .compress-row label {
+    font-size: 0.88rem;
+    color: #555;
+  }
+  .compress-row select {
+    flex: 1;
+    min-width: 200px;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 0.9rem;
+    color: var(--ink);
+  }
+  .actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button.primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button.primary:disabled {
+    background: #b7c4bf;
+    cursor: default;
+  }
+  button.ghost {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: #555;
+  }
+  #status {
+    margin-top: 14px;
+    font-size: 0.88rem;
+    color: #555;
+    min-height: 1.2em;
+  }
+  #status.done { color: var(--accent); }
+  footer {
+    text-align: center;
+    padding: 30px 20px 40px;
+    font-size: 0.78rem;
+    color: #999;
+  }
+</style>
+</head>
+<body>
+
+<div id="splash" role="button" tabindex="0" aria-label="Tap to start in full screen">
+  <div class="splash-icon">⇩</div>
+  <h2>Image → PDF</h2>
+  <p>Tap to start</p>
+</div>
+
+<header>
+  <div class="titles">
+    <h1>Image → PDF</h1>
+    <p class="sub">Runs entirely on this device. Nothing is uploaded anywhere.</p>
+  </div>
+  <button class="mode-toggle" id="appModeBtn" aria-pressed="false" title="Toggle app mode (full screen)">
+    <span class="icon">⛶</span><span class="label">App mode</span>
+  </button>
+</header>
+
+<main>
+  <div class="dropzone" id="dropzone">
+    <p><strong>Tap to choose images</strong><br>or drop them here</p>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="compress-row" id="compressRow" style="display:none;">
+    <label for="quality">Compression</label>
+    <select id="quality">
+      <option value="none">None — original quality</option>
+      <option value="low">Low — light compression</option>
+      <option value="medium" selected>Medium — balanced</option>
+      <option value="high">High — smallest file</option>
+    </select>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="convertBtn" disabled>Convert to PDF</button>
+    <button class="ghost" id="clearBtn" style="display:none;">Clear all</button>
+  </div>
+
+  <div id="status"></div>
+</main>
+
+<footer>No accounts, no ads, no network calls. Your images never leave this browser.</footer>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const list = document.getElementById('list');
+const convertBtn = document.getElementById('convertBtn');
+const clearBtn = document.getElementById('clearBtn');
+const status = document.getElementById('status');
+
+let files = []; // {file, url}
+
+dropzone.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', e => addFiles(e.target.files));
+
+['dragover', 'dragleave', 'drop'].forEach(evt => {
+  dropzone.addEventListener(evt, e => {
+    e.preventDefault();
+    if (evt === 'dragover') dropzone.classList.add('drag');
+    if (evt === 'dragleave' || evt === 'drop') dropzone.classList.remove('drag');
+  });
+});
+dropzone.addEventListener('drop', e => {
+  addFiles(e.dataTransfer.files);
+});
+
+function addFiles(fileList) {
+  for (const f of fileList) {
+    if (!f.type.startsWith('image/')) continue;
+    files.push({ file: f, url: URL.createObjectURL(f) });
+  }
+  render();
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function render() {
+  list.innerHTML = '';
+  files.forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `
+      <img src="${item.url}" alt="">
+      <div class="meta">
+        <div class="name">${item.file.name}</div>
+        <div class="size">${formatSize(item.file.size)}</div>
+      </div>
+      <div class="order">
+        <button data-dir="up" data-i="${i}" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button data-dir="down" data-i="${i}" ${i === files.length - 1 ? 'disabled' : ''}>▼</button>
+      </div>
+      <button class="remove" data-remove="${i}">✕</button>
+    `;
+    list.appendChild(div);
+  });
+
+  list.querySelectorAll('[data-dir]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.i);
+      const dir = btn.dataset.dir;
+      const j = dir === 'up' ? i - 1 : i + 1;
+      [files[i], files[j]] = [files[j], files[i]];
+      render();
+    });
+  });
+  list.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.remove);
+      URL.revokeObjectURL(files[i].url);
+      files.splice(i, 1);
+      render();
+    });
+  });
+
+  convertBtn.disabled = files.length === 0;
+  clearBtn.style.display = files.length ? 'inline-block' : 'none';
+  document.getElementById('compressRow').style.display = files.length ? 'flex' : 'none';
+  status.textContent = '';
+  status.className = '';
+}
+
+clearBtn.addEventListener('click', () => {
+  files.forEach(f => URL.revokeObjectURL(f.url));
+  files = [];
+  render();
+});
+
+const COMPRESSION_SETTINGS = {
+  none:   { jpegQuality: 0.92, maxDimension: null },
+  low:    { jpegQuality: 0.82, maxDimension: 2200 },
+  medium: { jpegQuality: 0.68, maxDimension: 1800 },
+  high:   { jpegQuality: 0.5,  maxDimension: 1400 }
+};
+
+// Recompress an image through a canvas: re-encodes as JPEG at the given
+// quality and optionally downscales, which is what actually reduces
+// file size (unlike PDF-level structural compression alone).
+function recompress(img, settings) {
+  let { width, height } = img;
+  if (settings.maxDimension && Math.max(width, height) > settings.maxDimension) {
+    const scale = settings.maxDimension / Math.max(width, height);
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  // Flatten onto white first in case of transparent PNGs, since JPEG has no alpha
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  return {
+    dataUrl: canvas.toDataURL('image/jpeg', settings.jpegQuality),
+    width,
+    height
+  };
+}
+
+convertBtn.addEventListener('click', async () => {
+  if (!files.length) return;
+  convertBtn.disabled = true;
+  status.className = '';
+
+  const level = document.getElementById('quality').value;
+  const settings = COMPRESSION_SETTINGS[level];
+  status.textContent = `Building PDF from ${files.length} image${files.length > 1 ? 's' : ''}...`;
+
+  try {
+    const { jsPDF } = window.jspdf;
+    let doc = null;
+
+    for (let i = 0; i < files.length; i++) {
+      status.textContent = `Processing ${i + 1} of ${files.length}...`;
+      const img = await loadImage(files[i].url);
+
+      let drawWidth = img.width;
+      let drawHeight = img.height;
+      let dataToAdd = img;
+      let format = files[i].file.type.includes('png') ? 'PNG' : 'JPEG';
+
+      if (level !== 'none') {
+        const result = recompress(img, settings);
+        dataToAdd = result.dataUrl;
+        drawWidth = result.width;
+        drawHeight = result.height;
+        format = 'JPEG';
+      }
+
+      const orientation = drawWidth > drawHeight ? 'l' : 'p';
+      const pageSize = [drawWidth, drawHeight];
+
+      if (!doc) {
+        doc = new jsPDF({ orientation, unit: 'px', format: pageSize, compress: true });
+      } else {
+        doc.addPage(pageSize, orientation);
+      }
+
+      doc.addImage(dataToAdd, format, 0, 0, drawWidth, drawHeight);
+    }
+
+    doc.save('converted.pdf');
+    const sizeNote = level === 'none' ? '' : ` (${level} compression)`;
+    status.textContent = `Done — ${files.length} image${files.length > 1 ? 's' : ''} saved as converted.pdf${sizeNote}`;
+    status.className = 'done';
+  } catch (err) {
+    status.textContent = 'Something went wrong: ' + err.message;
+  } finally {
+    convertBtn.disabled = false;
+  }
+});
+
+// ---------- App mode (PWA-style simulation) ----------
+// Visual app styling is always applied; real full screen is best-effort,
+// because some browsers (notably Safari on iPhone) don't allow it for pages.
+const appModeBtn = document.getElementById('appModeBtn');
+const themeColor = document.getElementById('themeColor');
+const rootEl = document.documentElement;
+const canFullscreen = !!(rootEl.requestFullscreen || rootEl.webkitRequestFullscreen);
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+async function enterFullscreen() {
+  if (!canFullscreen || fullscreenElement()) return;
+  try {
+    if (rootEl.requestFullscreen) await rootEl.requestFullscreen({ navigationUI: 'hide' });
+    else rootEl.webkitRequestFullscreen();
+  } catch (e) { /* fall back to visual-only app mode */ }
+}
+
+async function exitFullscreen() {
+  if (!fullscreenElement()) return;
+  try {
+    if (document.exitFullscreen) await document.exitFullscreen();
+    else document.webkitExitFullscreen();
+  } catch (e) { /* ignore */ }
+}
+
+function applyAppStyle(on) {
+  document.body.classList.toggle('app-mode', on);
+  appModeBtn.setAttribute('aria-pressed', String(on));
+  appModeBtn.querySelector('.label').textContent = on ? 'Exit app mode' : 'App mode';
+  themeColor.content = on ? '#2f5d4f' : '#f6f4ee';
+}
+
+appModeBtn.addEventListener('click', () => {
+  const on = !document.body.classList.contains('app-mode');
+  applyAppStyle(on);
+  if (on) enterFullscreen(); else exitFullscreen();
+});
+
+// If launched from a home-screen install, it's already a real standalone
+// app: apply the styling permanently and hide the toggle.
+const isStandalone =
+  window.matchMedia('(display-mode: standalone)').matches ||
+  window.matchMedia('(display-mode: fullscreen)').matches ||
+  window.navigator.standalone === true;
+if (isStandalone) {
+  document.body.classList.add('standalone');
+  applyAppStyle(true);
+} else {
+  // Default to app mode on launch. Browsers refuse full screen unless it's
+  // requested directly from a user gesture, so show a launch splash whose
+  // only job is to receive that tap and enter full screen.
+  applyAppStyle(true);
+  if (canFullscreen) {
+    const splash = document.getElementById('splash');
+    splash.classList.add('show');
+    const start = async () => {
+      splash.removeEventListener('click', start);
+      splash.removeEventListener('keydown', onKey);
+      await enterFullscreen();
+      splash.classList.add('hide');
+      setTimeout(() => splash.remove(), 300);
+    };
+    const onKey = e => { if (e.key === 'Enter' || e.key === ' ') start(); };
+    splash.addEventListener('click', start);
+    splash.addEventListener('keydown', onKey);
+    splash.focus();
+  }
+}
+
+// Register the offline helper (only works when served from a website)
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+</script>
+
+</body>
+</html>
